@@ -20,6 +20,7 @@ import datetime
 import requests
 from openpyxl import load_workbook
 import json
+import xlsxwriter
 
 ## TEMPLATE FUNCTIONS
 def setupLogging(logconfig, logfile, verbose, debug):
@@ -77,6 +78,7 @@ def getArgs():
     parser.add_argument('-o', '--orginfo', help='Org Id or Org Name')
     parser.add_argument('-a', '--apikey', help='Set API Key', required=True)
     parser.add_argument('-e', '--excelfile', help='Set Input File', required=True)
+    parser.add_argument('-f', '--filename', help='Output Filename', required=True)
 
     # Add additional arguments if required
     #parser.add_argument('-e', '--example', help='This is an example')
@@ -207,10 +209,33 @@ def creatNetworks(f_apikey, f_url, f_org, f_networksToCreate):
               }
     
     r = requests.request("POST", url, data=payload, headers=headers)
+    
+    return (r.json())
 
-    return ({'return_code': r.status_code,
-             'response'   : r.text
-            })
+def createXL(f_fname, f_networks):
+    wb = xlsxwriter.Workbook(f_fname)
+
+    # Create Devices Tab
+    info("Creating and Populating Device Tab")
+    networkWS = wb.add_worksheet('Networks')
+    networkColTitles = ['Net ID',
+                        'Org ID',
+                        'Type',
+                        'Name',
+                        'Time Zone',
+                        'Tags',
+                        'Disable My Meraki Com',
+                        'Disable Remote Status Page'
+                       ]
+    networkWS.write_row(0,0,networkColTitles)
+    row = 1
+    for _net in f_networks:
+        try:
+            networkWS.write_row(row,0,_net)
+        except Exception as e:
+            error(e)
+        row += 1
+    info("Network Tab Complete")
 
 ### MAIN FUNCTION
 def main():
@@ -228,6 +253,8 @@ def main():
     # Assign Excel Filename to inputFile variable
     inputFile = args.excelfile
 
+    # Assign Filename from inout 
+    filename = args.filename
     # Get Organization ID based on information provided by user
     # User gives either OrgID or OrgName and the program finds
     # OrgID to use for other API calls
@@ -251,10 +278,22 @@ def main():
     shardurl = getShardURL(apikey, orgid)
     debug ("getShardURL returned %s" % shardurl)
     
-    
+    networksCreated = []
     networksToAdd = getDeviceInfo(inputFile, orgid)
     for _network in networksToAdd:
-        creatNetworks(apikey, shardurl, orgid, _network)
+        response = creatNetworks(apikey, shardurl, orgid, _network)
+        
+        networksCreated.append([response['id'],
+                                response['organizationId'],
+                                response['type'],
+                                response['name'],
+                                response['timeZone'],
+                                response['tags'],
+                                response['disableMyMerakiCom'],
+                                response['disableRemoteStatusPage']]
+                              )
+        
+    createXL(filename, networksCreated)
 
     scriptEndTime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     info("== (" + scriptEndTime + ") END SCRIPT ==")
